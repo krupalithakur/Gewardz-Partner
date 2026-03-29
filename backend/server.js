@@ -333,6 +333,11 @@ app.get('/api/counties', (_req, res) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`✅ Gewardz Partner Discovery backend running on http://localhost:${PORT}`);
-});
+// Export for Vercel serverless — listen only when running locally
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`✅ Gewardz Partner Discovery backend running on http://localhost:${PORT}`);
+  });
+}
+
+module.exports = app;
