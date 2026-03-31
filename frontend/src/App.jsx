@@ -1,8 +1,10 @@
 import { useState, useCallback } from 'react';
 import SearchPanel from './components/SearchPanel.jsx';
 import ResultsTable from './components/ResultsTable.jsx';
+import Pipeline from './components/Pipeline.jsx';
 
 export default function App() {
+  const [tab, setTab] = useState('discovery'); // discovery | pipeline
   const [companies, setCompanies] = useState([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
@@ -14,6 +16,7 @@ export default function App() {
     keyword: '', county: '', size: '', companyType: '',
     status: 'active', directors: '', registeredAfter: '',
   });
+  const [pipelineCount, setPipelineCount] = useState(0);
 
   // ─── Enrich helper ────────────────────────────────────────────────────────────
   const enrichCompanies = useCallback(async (raw, sizeFilter) => {
@@ -30,7 +33,7 @@ export default function App() {
       return data.enriched || raw;
     } catch (e) {
       console.warn('Enrichment failed, showing raw results:', e.message);
-      return raw; // degrade gracefully — still show un-enriched cards
+      return raw;
     } finally {
       setEnriching(false);
     }
@@ -46,10 +49,10 @@ export default function App() {
     setLastQuery({ keyword, county, size, companyType, status, directors, registeredAfter });
 
     const qs = new URLSearchParams();
-    if (keyword)       qs.set('keyword', keyword);
-    if (county)        qs.set('county', county);
-    if (companyType)   qs.set('companyType', companyType);
-    if (status)        qs.set('status', status);
+    if (keyword)         qs.set('keyword', keyword);
+    if (county)          qs.set('county', county);
+    if (companyType)     qs.set('companyType', companyType);
+    if (status)          qs.set('status', status);
     if (registeredAfter) qs.set('registeredAfter', registeredAfter);
     qs.set('limit', limit);
     qs.set('offset', newOffset);
@@ -62,18 +65,13 @@ export default function App() {
       let records = data.records || [];
       const total  = data.total  || 0;
 
-      // Client-side director / size hints (applied before enrichment)
-      if (directors === '1')   records = records.filter(c => Number(c.num_of_directors) === 1);
-      if (directors === '2')   records = records.filter(c => Number(c.num_of_directors) === 2);
-      if (directors === '' && records.length > 0) {
-        // default: prefer 1-2 directors (owner-managed) but keep all so count is accurate
-      }
+      if (directors === '1') records = records.filter(c => Number(c.num_of_directors) === 1);
+      if (directors === '2') records = records.filter(c => Number(c.num_of_directors) === 2);
 
       setTotal(total);
       setOffset(newOffset);
       setLoading(false);
 
-      // Auto-enrich immediately after search
       const enriched = await enrichCompanies(records, size);
       setCompanies(enriched);
     } catch (e) {
@@ -88,6 +86,25 @@ export default function App() {
   const handlePageChange = useCallback((newOffset) => {
     handleSearch(lastQuery, newOffset);
   }, [handleSearch, lastQuery]);
+
+  // ─── Add to pipeline ──────────────────────────────────────────────────────────
+  const handleAddToPipeline = useCallback(async (company) => {
+    try {
+      const res = await fetch('/api/pipeline/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ company }),
+      });
+      if (res.ok) {
+        setPipelineCount(c => c + 1);
+        // Brief visual feedback
+        return true;
+      }
+    } catch (e) {
+      console.error('Add to pipeline failed:', e);
+    }
+    return false;
+  }, []);
 
   // ─── Export CSV ───────────────────────────────────────────────────────────────
   const handleExportCSV = useCallback(async () => {
@@ -114,6 +131,11 @@ export default function App() {
     }
   }, [companies]);
 
+  // Refresh pipeline count on mount
+  useState(() => {
+    fetch('/api/pipeline/stats').then(r => r.json()).then(d => setPipelineCount(d.totalProspects || 0)).catch(() => {});
+  });
+
   return (
     <div className="app-shell">
       {/* Header */}
@@ -128,6 +150,41 @@ export default function App() {
             </div>
           </div>
         </div>
+
+        {/* Tab buttons */}
+        <div style={{ display: 'flex', gap: 4, marginLeft: 32 }}>
+          <button
+            onClick={() => setTab('discovery')}
+            style={{
+              padding: '6px 16px', borderRadius: 6, fontSize: 13, fontWeight: 600, border: 'none',
+              background: tab === 'discovery' ? 'var(--accent-dim)' : 'transparent',
+              color: tab === 'discovery' ? 'var(--accent-text)' : 'var(--text-muted)',
+              cursor: 'pointer',
+            }}
+          >
+            🔍 Discovery
+          </button>
+          <button
+            onClick={() => { setTab('pipeline'); fetch('/api/pipeline/stats').then(r => r.json()).then(d => setPipelineCount(d.totalProspects || 0)).catch(() => {}); }}
+            style={{
+              padding: '6px 16px', borderRadius: 6, fontSize: 13, fontWeight: 600, border: 'none',
+              background: tab === 'pipeline' ? 'var(--accent-dim)' : 'transparent',
+              color: tab === 'pipeline' ? 'var(--accent-text)' : 'var(--text-muted)',
+              cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
+            }}
+          >
+            📧 Outreach Pipeline
+            {pipelineCount > 0 && (
+              <span style={{
+                background: 'var(--accent)', color: 'white', fontSize: 10, fontWeight: 700,
+                padding: '1px 6px', borderRadius: 999, minWidth: 18, textAlign: 'center',
+              }}>
+                {pipelineCount}
+              </span>
+            )}
+          </button>
+        </div>
+
         <div className="header-spacer" />
         <span className="header-badge">Gewardz Health</span>
       </header>
@@ -141,18 +198,24 @@ export default function App() {
           </div>
         )}
 
-        <SearchPanel onSearch={p => handleSearch(p, 0)} loading={loading} />
+        {tab === 'discovery' && (
+          <>
+            <SearchPanel onSearch={p => handleSearch(p, 0)} loading={loading} />
+            <ResultsTable
+              companies={companies}
+              loading={loading}
+              enriching={enriching}
+              total={total}
+              offset={offset}
+              limit={limit}
+              onExportCSV={handleExportCSV}
+              onPageChange={handlePageChange}
+              onAddToPipeline={handleAddToPipeline}
+            />
+          </>
+        )}
 
-        <ResultsTable
-          companies={companies}
-          loading={loading}
-          enriching={enriching}
-          total={total}
-          offset={offset}
-          limit={limit}
-          onExportCSV={handleExportCSV}
-          onPageChange={handlePageChange}
-        />
+        {tab === 'pipeline' && <Pipeline />}
       </div>
     </div>
   );

@@ -73,7 +73,8 @@ function SkeletonCard() {
 }
 
 /* ─── Company card ───────────────────────────────────── */
-function CompanyCard({ company, onOutreach, enriching }) {
+function CompanyCard({ company, onOutreach, onAddToPipeline, enriching }) {
+  const [addedToPipeline, setAddedToPipeline] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const e = company.enrichment;
 
@@ -176,6 +177,21 @@ function CompanyCard({ company, onOutreach, enriching }) {
               {expanded ? '▲ Less' : '▼ More'}
             </button>
             <div style={{ flex: 1 }} />
+            {onAddToPipeline && (
+              <button
+                className={addedToPipeline ? 'btn btn-secondary btn-sm' : 'btn-outreach'}
+                style={addedToPipeline ? { background: 'var(--accent-dim)', color: 'var(--accent-text)', border: '1px solid var(--accent)', fontSize: 12 } : {}}
+                onClick={async () => {
+                  if (!addedToPipeline && onAddToPipeline) {
+                    const ok = await onAddToPipeline(company);
+                    if (ok) setAddedToPipeline(true);
+                  }
+                }}
+                disabled={addedToPipeline || enriching}
+              >
+                {addedToPipeline ? '✓ In Pipeline' : '+ Pipeline'}
+              </button>
+            )}
             <button
               className="btn-outreach"
               onClick={() => onOutreach(company)}
@@ -200,6 +216,7 @@ export default function ResultsTable({
   limit,
   onExportCSV,
   onPageChange,
+  onAddToPipeline,
 }) {
   const [outreachCompany, setOutreachCompany] = useState(null);
 
@@ -281,6 +298,7 @@ export default function ResultsTable({
               key={company._id || getCompanyNumber(company) || idx}
               company={company}
               onOutreach={setOutreachCompany}
+              onAddToPipeline={onAddToPipeline}
               enriching={enriching}
             />
           ))
