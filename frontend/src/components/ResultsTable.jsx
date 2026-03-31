@@ -50,9 +50,9 @@ function healthcareTag(e) {
   const svc = e.currentHealthcareService || '';
   if (!svc || svc === 'Unknown') return null;
   if (svc === 'None Known') {
-    return <span className="tag tag-green">No Existing Provider</span>;
+    return <span className="tag tag-healthcare tag-healthcare-none">⊘ No Existing Provider</span>;
   }
-  return <span className="tag tag-amber">{svc}</span>;
+  return <span className="tag tag-healthcare tag-healthcare-has">♥ {svc}</span>;
 }
 
 /* ─── Skeleton card ──────────────────────────────────── */
@@ -110,8 +110,8 @@ function CompanyCard({ company, onOutreach, onAddToPipeline, enriching }) {
             {healthcareTag(e)}
           </div>
 
-          {/* Contact info */}
-          {e && (e.estimatedOwnerEmail || e.estimatedOwnerLinkedIn || e.estimatedCompanySize) && (
+          {/* Contact info — always show when enriched */}
+          {e && (
             <div className="card-contact" style={{ marginTop: 10 }}>
               {e.estimatedOwnerEmail && (
                 <div className="contact-item">
@@ -119,22 +119,22 @@ function CompanyCard({ company, onOutreach, onAddToPipeline, enriching }) {
                   <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.estimatedOwnerEmail}</span>
                 </div>
               )}
+              {e.estimatedOwnerPhone && (
+                <div className="contact-item">
+                  <span className="contact-icon">📞</span>
+                  <span>{e.estimatedOwnerPhone}</span>
+                </div>
+              )}
+              {e.estimatedWebsite && (
+                <div className="contact-item">
+                  <span className="contact-icon">🌐</span>
+                  <a href={`https://${e.estimatedWebsite.replace(/^https?:\/\//, '')}`} target="_blank" rel="noreferrer" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.estimatedWebsite}</a>
+                </div>
+              )}
               {e.estimatedCompanySize && (
                 <div className="contact-item">
                   <span className="contact-icon">👥</span>
                   <span>~{e.estimatedCompanySize} staff</span>
-                </div>
-              )}
-              {e.estimatedOwnerLinkedIn && (
-                <div className="contact-item">
-                  <span className="contact-icon">🔗</span>
-                  <a href={`https://${e.estimatedOwnerLinkedIn.replace(/^https?:\/\//, '')}`} target="_blank" rel="noreferrer" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>LinkedIn</a>
-                </div>
-              )}
-              {county && (
-                <div className="contact-item">
-                  <span className="contact-icon">📍</span>
-                  <span>{county}</span>
                 </div>
               )}
             </div>

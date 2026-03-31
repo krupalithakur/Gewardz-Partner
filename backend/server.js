@@ -151,6 +151,8 @@ For each company return a JSON array where every element has EXACTLY these field
 - companyIndex: (integer, 0-based, matching the input order)
 - estimatedOwnerName: (string, plausible Irish CEO/director first+last name based on company type/size; or "Unknown" if truly can't infer)
 - estimatedOwnerEmail: (string, guessed email format e.g. john.smith@companyname.ie; or "" if unsure)
+- estimatedOwnerPhone: (string, plausible Irish phone number for the company based on location e.g. "01 234 5678" for Dublin, "021 234 5678" for Cork; or "" if unsure)
+- estimatedWebsite: (string, likely company website URL e.g. "www.companyname.ie"; or "" if unsure)
 - estimatedOwnerLinkedIn: (string, guessed LinkedIn URL slug e.g. linkedin.com/in/johnsmith; or "")
 - estimatedCompanySize: (string, one of: "1-10", "11-50", "51-200", "201-500", "500+")
 - partnerFitScore: (integer 1-10, where 10 = perfect Gewardz Health partner fit)
@@ -302,6 +304,8 @@ app.post('/api/export', (req, res) => {
       { id: 'incorporated', title: 'Incorporated' },
       { id: 'ownerName', title: 'Est. Owner Name' },
       { id: 'ownerEmail', title: 'Est. Owner Email' },
+      { id: 'ownerPhone', title: 'Est. Phone' },
+      { id: 'website', title: 'Est. Website' },
       { id: 'ownerLinkedIn', title: 'Est. Owner LinkedIn' },
       { id: 'companySize', title: 'Est. Company Size' },
       { id: 'industryTag', title: 'Industry' },
@@ -325,6 +329,8 @@ app.post('/api/export', (req, res) => {
       incorporated: c.company_reg_date ? c.company_reg_date.split('T')[0] : (c['Incorporation Date'] || ''),
       ownerName: e.estimatedOwnerName || '',
       ownerEmail: e.estimatedOwnerEmail || '',
+      ownerPhone: e.estimatedOwnerPhone || '',
+      website: e.estimatedWebsite || '',
       ownerLinkedIn: e.estimatedOwnerLinkedIn || '',
       companySize: e.estimatedCompanySize || '',
       industryTag: e.industryTag || '',
