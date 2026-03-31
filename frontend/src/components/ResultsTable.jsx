@@ -1,361 +1,323 @@
 import { useState } from 'react';
 import OutreachModal from './OutreachModal.jsx';
 
-function getField(company, ...keys) {
+/* ─── Field helpers ──────────────────────────────────── */
+function getField(c, ...keys) {
   for (const k of keys) {
-    if (company[k] !== undefined && company[k] !== null && company[k] !== '') return company[k];
+    if (c[k] !== undefined && c[k] !== null && c[k] !== '') return c[k];
   }
   return '';
 }
 
-// CRO API uses snake_case: company_name, company_num, company_type, company_status
-// company_address_4 typically holds "CITY, Ireland"
-function getCompanyName(c) {
-  return getField(c, 'company_name', 'Company Name', 'name') || 'Unknown';
+function getCompanyName(c) { return getField(c, 'company_name', 'Company Name', 'name') || 'Unknown'; }
+function getCompanyNumber(c) { return getField(c, 'company_num', 'Company Number', '_id'); }
+function getCompanyType(c) { return getField(c, 'company_type', 'Company Type', 'type'); }
+function getStatus(c) { return getField(c, 'company_status', 'Status', 'status'); }
+function getRegistered(c) {
+  const raw = c.company_reg_date || c['Incorporation Date'] || '';
+  if (!raw) return '';
+  return raw.includes('T') ? raw.split('T')[0] : raw;
 }
-
-function getCompanyNumber(c) {
-  return getField(c, 'company_num', 'Company Number', '_id');
+function getAddress(c) {
+  return [c.company_address_1, c.company_address_2, c.company_address_3, c.company_address_4]
+    .filter(Boolean).join(', ') || c['Address'] || '';
 }
-
-function getCompanyType(c) {
-  return getField(c, 'company_type', 'Company Type', 'type');
-}
-
 function getCounty(c) {
-  // address_4 contains e.g. "DUBLIN, Ireland" – extract city part
   const addr4 = c.company_address_4 || '';
   return addr4 ? addr4.split(',')[0].trim() : getField(c, 'County', 'county');
 }
 
-function getStatus(c) {
-  return getField(c, 'company_status', 'Status', 'status');
+/* ─── Initials avatar ────────────────────────────────── */
+function initials(name) {
+  if (!name || name === 'Unknown') return '?';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0][0].toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
-function statusClass(status) {
-  const s = (status || '').toLowerCase();
-  if (s.includes('normal') || s.includes('active')) return 'status-normal';
-  if (s.includes('dissolv') || s.includes('struck') || s.includes('liquidat')) return 'status-dissolved';
-  return 'status-other';
+/* ─── Confidence badge ───────────────────────────────── */
+function confidenceBadge(e) {
+  if (!e) return null;
+  const score = e.partnerFitScore || 0;
+  if (score >= 7) return <span className="confidence-badge badge-high">High Confidence</span>;
+  if (score >= 4) return <span className="confidence-badge badge-medium">Moderate</span>;
+  return null;
 }
 
-function scoreClass(score) {
-  if (!score) return '';
-  if (score >= 7) return 'score-hot';
-  if (score >= 4) return 'score-warm';
-  return 'score-cold';
+/* ─── Healthcare service tag ─────────────────────────── */
+function healthcareTag(e) {
+  if (!e) return null;
+  const svc = e.currentHealthcareService || '';
+  if (!svc || svc === 'Unknown') return null;
+  if (svc === 'None Known') {
+    return <span className="tag tag-green">No Existing Provider</span>;
+  }
+  return <span className="tag tag-amber">{svc}</span>;
 }
 
-function priorityClass(p) {
-  if (!p) return 'priority-cold';
-  const lower = p.toLowerCase();
-  if (lower === 'hot') return 'priority-hot';
-  if (lower === 'warm') return 'priority-warm';
-  return 'priority-cold';
-}
-
-function EnrichmentTooltip({ enrichment }) {
-  const [show, setShow] = useState(false);
-
-  if (!enrichment) return <span style={{ color: 'var(--text-dim)', fontSize: 11 }}>—</span>;
-
+/* ─── Skeleton card ──────────────────────────────────── */
+function SkeletonCard() {
   return (
-    <div
-      className="enrichment-tooltip"
-      onMouseEnter={() => setShow(true)}
-      onMouseLeave={() => setShow(false)}
-    >
-      <div
-        className={`score-badge ${scoreClass(enrichment.partnerFitScore)}`}
-        style={{ cursor: 'default' }}
-      >
-        {enrichment.partnerFitScore ?? '?'}
-      </div>
-
-      {show && (
-        <div className="enrichment-details">
-          <div className="detail-row">
-            <span className="detail-label">Owner</span>
-            <span className="detail-value">{enrichment.estimatedOwnerName || '—'}</span>
-          </div>
-          <div className="detail-row">
-            <span className="detail-label">Email</span>
-            <span className="detail-value">{enrichment.estimatedOwnerEmail || '—'}</span>
-          </div>
-          <div className="detail-row">
-            <span className="detail-label">LinkedIn</span>
-            <span className="detail-value">{enrichment.estimatedOwnerLinkedIn || '—'}</span>
-          </div>
-          <div className="detail-row">
-            <span className="detail-label">Size</span>
-            <span className="detail-value">{enrichment.estimatedCompanySize || '—'}</span>
-          </div>
-          <div className="detail-row">
-            <span className="detail-label">Fit reason</span>
-            <span className="detail-value">{enrichment.fitReason || '—'}</span>
-          </div>
+    <div className="card-skeleton">
+      <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#e5e7eb', flexShrink: 0 }} />
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div className="skeleton" style={{ width: '35%' }} />
+        <div className="skeleton" style={{ width: '55%' }} />
+        <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+          {[40, 70, 120, 90].map(w => <div key={w} className="skeleton" style={{ width: w, height: 20, borderRadius: 999 }} />)}
         </div>
-      )}
+        <div className="skeleton" style={{ width: '80%', marginTop: 4 }} />
+      </div>
     </div>
   );
 }
 
+/* ─── Company card ───────────────────────────────────── */
+function CompanyCard({ company, onOutreach, enriching }) {
+  const [expanded, setExpanded] = useState(false);
+  const e = company.enrichment;
+
+  const ownerName = e?.estimatedOwnerName && e.estimatedOwnerName !== 'Unknown' ? e.estimatedOwnerName : null;
+  const displayName = ownerName || getCompanyName(company);
+  const companyName = ownerName ? getCompanyName(company) : null;
+  const county = getCounty(company);
+  const type = getCompanyType(company);
+  const address = getAddress(company);
+  const registered = getRegistered(company);
+  const status = getStatus(company);
+
+  return (
+    <div className="company-card">
+      {/* Header */}
+      <div className="card-header">
+        <div className="card-avatar">{initials(displayName)}</div>
+        <div className="card-main">
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+            <div>
+              <div className="card-owner-name">{displayName}</div>
+              {companyName && <div className="card-company-name">{companyName}</div>}
+              {!companyName && ownerName === null && <div className="card-company-name">#{getCompanyNumber(company)}</div>}
+            </div>
+            {confidenceBadge(e)}
+          </div>
+
+          {/* Tags */}
+          <div className="card-tags">
+            {county && <span className="tag tag-gray">{county}</span>}
+            {e?.industryTag && <span className="tag tag-gray">{e.industryTag}</span>}
+            {type && <span className="tag tag-gray">{type.length > 30 ? type.replace('Private Company Limited by Shares', 'LTD').replace('Designated Activity Company', 'DAC').replace('Company Limited by Guarantee', 'CLG') : type}</span>}
+            {healthcareTag(e)}
+          </div>
+
+          {/* Contact info */}
+          {e && (e.estimatedOwnerEmail || e.estimatedOwnerLinkedIn || e.estimatedCompanySize) && (
+            <div className="card-contact" style={{ marginTop: 10 }}>
+              {e.estimatedOwnerEmail && (
+                <div className="contact-item">
+                  <span className="contact-icon">✉</span>
+                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{e.estimatedOwnerEmail}</span>
+                </div>
+              )}
+              {e.estimatedCompanySize && (
+                <div className="contact-item">
+                  <span className="contact-icon">👥</span>
+                  <span>~{e.estimatedCompanySize} staff</span>
+                </div>
+              )}
+              {e.estimatedOwnerLinkedIn && (
+                <div className="contact-item">
+                  <span className="contact-icon">🔗</span>
+                  <a href={`https://${e.estimatedOwnerLinkedIn.replace(/^https?:\/\//, '')}`} target="_blank" rel="noreferrer" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>LinkedIn</a>
+                </div>
+              )}
+              {county && (
+                <div className="contact-item">
+                  <span className="contact-icon">📍</span>
+                  <span>{county}</span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Pitch */}
+          {e?.fitReason && (
+            <div className="card-pitch">{e.fitReason}</div>
+          )}
+
+          {/* Expanded details */}
+          {expanded && (
+            <div className="card-details">
+              <span className="detail-label">CRO Number</span>
+              <span className="detail-value">{getCompanyNumber(company) || '—'}</span>
+              <span className="detail-label">Registered</span>
+              <span className="detail-value">{registered || '—'}</span>
+              <span className="detail-label">Address</span>
+              <span className="detail-value">{address || '—'}</span>
+              <span className="detail-label">Status</span>
+              <span className="detail-value">{status || '—'}</span>
+              {e?.currentHealthcareService && e.currentHealthcareService !== 'Unknown' && (
+                <>
+                  <span className="detail-label">Healthcare</span>
+                  <span className="detail-value">{e.currentHealthcareService}</span>
+                </>
+              )}
+              {e?.estimatedOwnerName && e.estimatedOwnerName !== 'Unknown' && (
+                <>
+                  <span className="detail-label">Est. Owner</span>
+                  <span className="detail-value">{e.estimatedOwnerName}</span>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* Footer */}
+          <div className="card-footer">
+            <button className="btn-more" onClick={() => setExpanded(x => !x)}>
+              {expanded ? '▲ Less' : '▼ More'}
+            </button>
+            <div style={{ flex: 1 }} />
+            <button
+              className="btn-outreach"
+              onClick={() => onOutreach(company)}
+              disabled={enriching}
+            >
+              <span>✦</span> Generate Outreach
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── Results container ──────────────────────────────── */
 export default function ResultsTable({
   companies,
   loading,
   enriching,
-  enrichingIndex,
   total,
   offset,
   limit,
-  onEnrichOne,
-  onEnrichAll,
   onExportCSV,
   onPageChange,
-  selectedIds,
-  onToggleSelect,
-  onSelectAll,
 }) {
   const [outreachCompany, setOutreachCompany] = useState(null);
-
-  const allSelected = companies.length > 0 && companies.every(c => selectedIds.has(c._id || getCompanyNumber(c)));
-  const anySelected = companies.some(c => selectedIds.has(c._id || getCompanyNumber(c)));
-  const anyEnriched = companies.some(c => c.enrichment);
 
   const totalPages = Math.ceil(total / limit);
   const currentPage = Math.floor(offset / limit) + 1;
 
+  const highConf = companies.filter(c => (c.enrichment?.partnerFitScore || 0) >= 7).length;
+  const openOpp  = companies.filter(c => c.enrichment?.currentHealthcareService === 'None Known').length;
+  const counties = new Set(companies.map(c => getCounty(c)).filter(Boolean)).size;
+  const anyEnriched = companies.some(c => c.enrichment);
+
   if (!loading && companies.length === 0) {
     return (
-      <div className="main-content">
-        <div className="empty-state">
-          <div className="empty-state-icon">🔍</div>
-          <div className="empty-state-title">No results yet</div>
-          <div className="empty-state-desc">
-            Use the search panel to find Irish companies from the CRO Open Data register.
-          </div>
+      <div className="empty-state">
+        <div className="empty-state-icon">🔍</div>
+        <div className="empty-state-title">Find your next partners</div>
+        <div className="empty-state-desc">
+          Search for Irish owner-managed businesses from the CRO register. Results are automatically enriched with AI-estimated owner contact details and partner fit scores.
         </div>
       </div>
     );
   }
 
   return (
-    <div className="main-content">
+    <>
       {/* Stats bar */}
-      <div className="stats-bar">
-        <div className="stat-item">
-          <span className="stat-value">{total.toLocaleString()}</span>
-          <span className="stat-label">companies found</span>
-        </div>
-        <div className="stat-item">
-          <span className="stat-value">{companies.filter(c => c.enrichment).length}</span>
-          <span className="stat-label">enriched</span>
-        </div>
-        {anyEnriched && (
-          <div className="stat-item">
-            <span className="stat-value">
-              {companies.filter(c => c.enrichment?.priorityLevel === 'Hot').length}
-            </span>
-            <span className="stat-label">hot leads</span>
+      {(companies.length > 0 || loading) && (
+        <div className="stats-bar">
+          <div className="stat-chip">
+            <div className="stat-icon stat-icon-green">🏢</div>
+            <span className="stat-value">{loading ? '—' : total.toLocaleString()}</span>
+            <span className="stat-label">Total Found</span>
           </div>
-        )}
-        <div className="stats-bar-spacer" />
-        <div className="stats-actions">
+          {anyEnriched && (
+            <>
+              <div className="stat-chip">
+                <div className="stat-icon stat-icon-blue">🛡</div>
+                <span className="stat-value">{highConf}</span>
+                <span className="stat-label">High Confidence</span>
+              </div>
+              <div className="stat-chip">
+                <div className="stat-icon stat-icon-green">💚</div>
+                <span className="stat-value">{openOpp}</span>
+                <span className="stat-label">Open Opportunities</span>
+              </div>
+            </>
+          )}
+          <div className="stat-chip">
+            <div className="stat-icon stat-icon-amber">📍</div>
+            <span className="stat-value">{loading ? '—' : counties}</span>
+            <span className="stat-label">Counties</span>
+          </div>
+
+          <div className="stats-spacer" />
+
           <button
-            className="btn btn-secondary btn-sm"
-            onClick={onEnrichAll}
-            disabled={enriching || loading || companies.length === 0}
-            title="Enrich all visible companies with AI"
-          >
-            {enriching ? (
-              <><span className="loading-spinner" style={{ width: 12, height: 12 }} />Enriching…</>
-            ) : '✨ Enrich All'}
-          </button>
-          <button
-            className="btn btn-secondary btn-sm"
+            className="export-btn"
             onClick={onExportCSV}
             disabled={!anyEnriched}
             title="Export enriched companies to CSV"
           >
-            📥 Export CSV
-          </button>
-        </div>
-      </div>
-
-      {/* Selection bar */}
-      {anySelected && (
-        <div className="select-all-bar">
-          <span>{[...selectedIds].length} selected</span>
-          <button
-            className="btn btn-primary btn-sm"
-            style={{ padding: '4px 12px' }}
-            onClick={() => {
-              const sel = companies.filter(c => selectedIds.has(c._id || getCompanyNumber(c)));
-              onEnrichOne(sel);
-            }}
-            disabled={enriching}
-          >
-            ✨ Enrich selected
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="7 10 12 15 17 10" />
+              <line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            Export CSV
           </button>
         </div>
       )}
 
-      {/* Table */}
-      <div className="results-area">
+      {/* Cards */}
+      <div className="cards-list">
         {loading ? (
-          <table className="results-table">
-            <thead>
-              <tr>
-                <th className="col-name">Company</th>
-                <th className="col-county">County</th>
-                <th className="col-type">Type</th>
-                <th className="col-status">Status</th>
-                <th className="col-score">Fit Score</th>
-                <th className="col-priority">Priority</th>
-                <th className="col-actions">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {Array.from({ length: 8 }).map((_, i) => (
-                <tr key={i}>
-                  {Array.from({ length: 7 }).map((_, j) => (
-                    <td key={j}><div className="skeleton" style={{ width: j === 0 ? '80%' : '60%' }} /></td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)
         ) : (
-          <table className="results-table">
-            <thead>
-              <tr>
-                <th style={{ width: 36 }}>
-                  <input
-                    type="checkbox"
-                    checked={allSelected}
-                    onChange={onSelectAll}
-                    style={{ accentColor: 'var(--accent)', cursor: 'pointer' }}
-                    title="Select all"
-                  />
-                </th>
-                <th className="col-name">Company</th>
-                <th className="col-county">County</th>
-                <th className="col-type">Type</th>
-                <th className="col-status">Status</th>
-                <th className="col-score" title="Hover for details">Fit ↑</th>
-                <th className="col-priority">Priority</th>
-                <th style={{ width: 100 }}>Industry</th>
-                <th className="col-actions">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {companies.map((company, idx) => {
-                const id = company._id || getCompanyNumber(company) || idx;
-                const selected = selectedIds.has(id);
-                const isEnriching = enriching && enrichingIndex === idx;
-                const e = company.enrichment;
-
-                return (
-                  <tr key={id} style={selected ? { background: 'rgba(91,106,245,0.06)' } : undefined}>
-                    <td>
-                      <input
-                        type="checkbox"
-                        checked={selected}
-                        onChange={() => onToggleSelect(id)}
-                        style={{ accentColor: 'var(--accent)', cursor: 'pointer' }}
-                      />
-                    </td>
-                    <td>
-                      <div className="company-name">{getCompanyName(company)}</div>
-                      {getCompanyNumber(company) && (
-                        <div className="company-number">#{getCompanyNumber(company)}</div>
-                      )}
-                    </td>
-                    <td style={{ color: 'var(--text-muted)' }}>{getCounty(company) || '—'}</td>
-                    <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{getCompanyType(company) || '—'}</td>
-                    <td>
-                      <span className={`status-dot ${statusClass(getStatus(company))}`}>
-                        {getStatus(company) || '—'}
-                      </span>
-                    </td>
-                    <td>
-                      {isEnriching
-                        ? <span className="loading-spinner" style={{ width: 20, height: 20 }} />
-                        : <EnrichmentTooltip enrichment={e} />
-                      }
-                    </td>
-                    <td>
-                      {e?.priorityLevel
-                        ? <span className={`priority-pill ${priorityClass(e.priorityLevel)}`}>{e.priorityLevel}</span>
-                        : <span style={{ color: 'var(--text-dim)' }}>—</span>
-                      }
-                    </td>
-                    <td>
-                      {e?.industryTag
-                        ? <span className="industry-tag">{e.industryTag}</span>
-                        : <span style={{ color: 'var(--text-dim)' }}>—</span>
-                      }
-                    </td>
-                    <td>
-                      <div className="row-actions">
-                        {!e && (
-                          <button
-                            className="btn btn-secondary btn-sm"
-                            onClick={() => onEnrichOne([company])}
-                            disabled={enriching}
-                            title="AI enrich this company"
-                          >
-                            ✨
-                          </button>
-                        )}
-                        <button
-                          className="btn btn-secondary btn-sm"
-                          onClick={() => setOutreachCompany(company)}
-                          title="Generate outreach sequence"
-                          disabled={enriching}
-                        >
-                          ✉️
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          companies.map((company, idx) => (
+            <CompanyCard
+              key={company._id || getCompanyNumber(company) || idx}
+              company={company}
+              onOutreach={setOutreachCompany}
+              enriching={enriching}
+            />
+          ))
         )}
       </div>
 
+      {/* Enriching indicator */}
+      {enriching && (
+        <div className="alert alert-info" style={{ marginTop: 8 }}>
+          <span className="loading-spinner" style={{ width: 14, height: 14 }} />
+          Enriching with AI — estimating owner details, fit scores &amp; healthcare context…
+        </div>
+      )}
+
       {/* Pagination */}
-      {total > limit && (
+      {total > limit && !loading && (
         <div className="pagination">
           <button
             className="btn btn-secondary btn-sm"
             onClick={() => onPageChange(Math.max(0, offset - limit))}
-            disabled={offset === 0 || loading}
-          >
-            ← Prev
-          </button>
+            disabled={offset === 0}
+          >← Prev</button>
           <span className="pagination-info">
             Page {currentPage} of {totalPages} · {total.toLocaleString()} total
           </span>
           <button
             className="btn btn-secondary btn-sm"
             onClick={() => onPageChange(offset + limit)}
-            disabled={offset + limit >= total || loading}
-          >
-            Next →
-          </button>
+            disabled={offset + limit >= total}
+          >Next →</button>
         </div>
       )}
 
       {/* Outreach modal */}
       {outreachCompany && (
-        <OutreachModal
-          company={outreachCompany}
-          onClose={() => setOutreachCompany(null)}
-        />
+        <OutreachModal company={outreachCompany} onClose={() => setOutreachCompany(null)} />
       )}
-    </div>
+    </>
   );
 }

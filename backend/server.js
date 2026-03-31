@@ -40,8 +40,16 @@ app.get('/api/fields', async (_req, res) => {
 //   size     – "small" | "medium" | "large" (applied post-fetch via Claude hints)
 //   limit    – default 20
 //   offset   – default 0
+const COMPANY_TYPE_MAP = {
+  LTD: 'Private Company Limited by Shares',
+  DAC: 'Designated Activity Company',
+  CLG: 'Company Limited by Guarantee',
+  PLC: 'Public Limited Company',
+  UC:  'Unlimited Company',
+};
+
 app.get('/api/search', async (req, res) => {
-  const { keyword, county, limit = 20, offset = 0 } = req.query;
+  const { keyword, county, companyType, status, registeredAfter, limit = 20, offset = 0 } = req.query;
 
   const params = {
     resource_id: COMPANY_RESOURCE_ID,
@@ -50,12 +58,17 @@ app.get('/api/search', async (req, res) => {
   };
 
   // CKAN plain-text full-text search across all fields.
-  // company_address_4 contains e.g. "DUBLIN 2, DUBLIN, IRELAND" so appending the
-  // county name to q is sufficient for location filtering.
   const queryParts = [];
   if (keyword && keyword.trim()) queryParts.push(keyword.trim());
   if (county && county.trim()) queryParts.push(county.trim());
   if (queryParts.length > 0) params.q = queryParts.join(' ');
+
+  // CKAN exact-match filters (safe to combine with q)
+  const filters = {};
+  if (status === 'active') filters.company_status = 'Normal';
+  if (status === 'struck') filters.company_status = 'Struck Off';
+  if (companyType && COMPANY_TYPE_MAP[companyType]) filters.company_type = COMPANY_TYPE_MAP[companyType];
+  if (Object.keys(filters).length > 0) params.filters = JSON.stringify(filters);
 
   try {
     const response = await axios.get(`${CRO_API}/datastore_search`, {
@@ -134,9 +147,10 @@ For each company return a JSON array where every element has EXACTLY these field
 - estimatedOwnerLinkedIn: (string, guessed LinkedIn URL slug e.g. linkedin.com/in/johnsmith; or "")
 - estimatedCompanySize: (string, one of: "1-10", "11-50", "51-200", "201-500", "500+")
 - partnerFitScore: (integer 1-10, where 10 = perfect Gewardz Health partner fit)
-- fitReason: (string, 1-2 sentences explaining the score)
-- industryTag: (string, single best-fit industry tag)
+- fitReason: (string, 1-2 sentences explaining why Gewardz Health should partner with this specific company — personalised to their industry/size/location)
+- industryTag: (string, single best-fit industry tag e.g. "Recruitment", "Tech", "Finance", "Construction")
 - priorityLevel: (string, one of: "Hot", "Warm", "Cold")
+- currentHealthcareService: (string, inferred corporate health/wellness provider the company likely uses based on their size/industry/type. One of: "None Known", "VHI Corporate", "Laya Healthcare", "Irish Life Health", "Occupational Health Scheme", "EAP Provider", "Unknown". Use "None Known" if a company of this type/size is unlikely to have a provider yet — this is a key buying signal for Gewardz Health.)
 
 Respond with ONLY the raw JSON array, no markdown, no explanation.`;
 
@@ -287,6 +301,7 @@ app.post('/api/export', (req, res) => {
       { id: 'fitScore', title: 'Partner Fit Score (1-10)' },
       { id: 'fitReason', title: 'Fit Reason' },
       { id: 'priority', title: 'Priority Level' },
+      { id: 'healthcareService', title: 'Current Healthcare Service' },
     ],
   });
 
@@ -309,6 +324,7 @@ app.post('/api/export', (req, res) => {
       fitScore: e.partnerFitScore || '',
       fitReason: e.fitReason || '',
       priority: e.priorityLevel || '',
+      healthcareService: e.currentHealthcareService || '',
     };
   });
 

@@ -9,105 +9,97 @@ export default function App() {
   const [limit] = useState(20);
   const [loading, setLoading] = useState(false);
   const [enriching, setEnriching] = useState(false);
-  const [enrichingIndex, setEnrichingIndex] = useState(-1);
   const [error, setError] = useState('');
-  const [lastQuery, setLastQuery] = useState({ keyword: '', county: '', size: '' });
-  const [selectedIds, setSelectedIds] = useState(new Set());
+  const [lastQuery, setLastQuery] = useState({
+    keyword: '', county: '', size: '', companyType: '',
+    status: 'active', directors: '', registeredAfter: '',
+  });
 
-  // ─── Search ─────────────────────────────────────────────────────────────────
+  // ─── Enrich helper ────────────────────────────────────────────────────────────
+  const enrichCompanies = useCallback(async (raw, sizeFilter) => {
+    if (!raw || raw.length === 0) return raw;
+    setEnriching(true);
+    try {
+      const res = await fetch('/api/enrich', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ companies: raw, sizeFilter: sizeFilter || undefined }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Enrichment failed');
+      return data.enriched || raw;
+    } catch (e) {
+      console.warn('Enrichment failed, showing raw results:', e.message);
+      return raw; // degrade gracefully — still show un-enriched cards
+    } finally {
+      setEnriching(false);
+    }
+  }, []);
+
+  // ─── Search (+ auto-enrich) ───────────────────────────────────────────────────
   const handleSearch = useCallback(async (params, newOffset = 0) => {
     setLoading(true);
     setError('');
-    setSelectedIds(new Set());
+    setCompanies([]);
 
-    const { keyword, county, size } = params;
-    setLastQuery({ keyword, county, size });
+    const { keyword, county, size, companyType, status, directors, registeredAfter } = params;
+    setLastQuery({ keyword, county, size, companyType, status, directors, registeredAfter });
 
     const qs = new URLSearchParams();
-    if (keyword) qs.set('keyword', keyword);
-    if (county) qs.set('county', county);
+    if (keyword)       qs.set('keyword', keyword);
+    if (county)        qs.set('county', county);
+    if (companyType)   qs.set('companyType', companyType);
+    if (status)        qs.set('status', status);
+    if (registeredAfter) qs.set('registeredAfter', registeredAfter);
     qs.set('limit', limit);
     qs.set('offset', newOffset);
 
     try {
       const res = await fetch(`/api/search?${qs}`);
       const data = await res.json();
-
       if (!res.ok) throw new Error(data.error || 'Search failed');
 
-      setCompanies(data.records || []);
-      setTotal(data.total || 0);
+      let records = data.records || [];
+      const total  = data.total  || 0;
+
+      // Client-side director / size hints (applied before enrichment)
+      if (directors === '1')   records = records.filter(c => Number(c.num_of_directors) === 1);
+      if (directors === '2')   records = records.filter(c => Number(c.num_of_directors) === 2);
+      if (directors === '' && records.length > 0) {
+        // default: prefer 1-2 directors (owner-managed) but keep all so count is accurate
+      }
+
+      setTotal(total);
       setOffset(newOffset);
+      setLoading(false);
+
+      // Auto-enrich immediately after search
+      const enriched = await enrichCompanies(records, size);
+      setCompanies(enriched);
     } catch (e) {
       setError(e.message);
       setCompanies([]);
       setTotal(0);
-    } finally {
       setLoading(false);
     }
-  }, [limit]);
+  }, [limit, enrichCompanies]);
 
-  // ─── Page change ─────────────────────────────────────────────────────────────
+  // ─── Page change ──────────────────────────────────────────────────────────────
   const handlePageChange = useCallback((newOffset) => {
     handleSearch(lastQuery, newOffset);
   }, [handleSearch, lastQuery]);
 
-  // ─── Enrich companies ────────────────────────────────────────────────────────
-  const handleEnrich = useCallback(async (targetCompanies) => {
-    if (!targetCompanies || targetCompanies.length === 0) return;
-    setEnriching(true);
-    setError('');
-
-    try {
-      const res = await fetch('/api/enrich', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          companies: targetCompanies,
-          sizeFilter: lastQuery.size || undefined,
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Enrichment failed');
-
-      const enriched = data.enriched || [];
-
-      setCompanies(prev => prev.map(c => {
-        const match = enriched.find(e =>
-          (e.company_name && e.company_name === c.company_name) ||
-          (e.company_num && e.company_num === c.company_num) ||
-          (e._id !== undefined && e._id === c._id)
-        );
-        return match || c;
-      }));
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setEnriching(false);
-      setEnrichingIndex(-1);
-    }
-  }, [lastQuery.size]);
-
-  // Enrich all visible companies
-  const handleEnrichAll = useCallback(() => {
-    handleEnrich(companies);
-  }, [companies, handleEnrich]);
-
-  // ─── Export CSV ──────────────────────────────────────────────────────────────
+  // ─── Export CSV ───────────────────────────────────────────────────────────────
   const handleExportCSV = useCallback(async () => {
     const enriched = companies.filter(c => c.enrichment);
     if (enriched.length === 0) return;
-
     try {
       const res = await fetch('/api/export', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ companies: enriched }),
       });
-
       if (!res.ok) throw new Error('Export failed');
-
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -122,25 +114,6 @@ export default function App() {
     }
   }, [companies]);
 
-  // ─── Selection ───────────────────────────────────────────────────────────────
-  const handleToggleSelect = useCallback((id) => {
-    setSelectedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  }, []);
-
-  const handleSelectAll = useCallback(() => {
-    const allIds = companies.map((c, i) => c._id || c.company_num || c['Company Number'] || i);
-    const allSelected = allIds.every(id => selectedIds.has(id));
-    if (allSelected) {
-      setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(allIds));
-    }
-  }, [companies, selectedIds]);
-
   return (
     <div className="app-shell">
       {/* Header */}
@@ -148,47 +121,37 @@ export default function App() {
         <div className="header-logo">
           <div className="header-logo-icon">🏥</div>
           <div>
-            <div className="header-title">Gewardz Partner Discovery</div>
-            <div className="header-subtitle">Powered by CRO Ireland Open Data + Claude AI</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span className="header-title">Partner Discovery</span>
+              <span className="header-divider">—</span>
+              <span className="header-subtitle">Ireland's owner-managed business finder</span>
+            </div>
           </div>
         </div>
         <div className="header-spacer" />
         <span className="header-badge">Gewardz Health</span>
       </header>
 
-      {/* Sidebar */}
-      <SearchPanel onSearch={params => handleSearch(params, 0)} loading={loading} />
-
-      {/* Main */}
-      <div style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      {/* Page body */}
+      <div className="page-body">
         {error && (
-          <div className="alert alert-error" style={{ margin: '12px 16px', flexShrink: 0 }}>
+          <div className="alert alert-error">
             ⚠️ {error}
-            <button
-              className="btn btn-ghost btn-sm"
-              onClick={() => setError('')}
-              style={{ marginLeft: 'auto' }}
-            >
-              ✕
-            </button>
+            <button className="btn btn-ghost btn-sm" onClick={() => setError('')} style={{ marginLeft: 'auto' }}>✕</button>
           </div>
         )}
+
+        <SearchPanel onSearch={p => handleSearch(p, 0)} loading={loading} />
 
         <ResultsTable
           companies={companies}
           loading={loading}
           enriching={enriching}
-          enrichingIndex={enrichingIndex}
           total={total}
           offset={offset}
           limit={limit}
-          onEnrichOne={handleEnrich}
-          onEnrichAll={handleEnrichAll}
           onExportCSV={handleExportCSV}
           onPageChange={handlePageChange}
-          selectedIds={selectedIds}
-          onToggleSelect={handleToggleSelect}
-          onSelectAll={handleSelectAll}
         />
       </div>
     </div>
