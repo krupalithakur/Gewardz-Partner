@@ -45,11 +45,12 @@ app.get('/api/fields', async (_req, res) => {
 //   size     – "small" | "medium" | "large" (applied post-fetch via Claude hints)
 //   limit    – default 20
 //   offset   – default 0
+// CRO type values include prefix e.g. "LTD - Private Company Limited by Shares"
 const COMPANY_TYPE_MAP = {
-  LTD: 'Private Company Limited by Shares',
-  DAC: 'Designated Activity Company',
-  CLG: 'Company Limited by Guarantee',
-  PLC: 'Public Limited Company',
+  LTD: 'LTD - Private Company Limited by Shares',
+  DAC: 'DAC - Designated Activity Company',
+  CLG: 'CLG - Company Limited by Guarantee',
+  PLC: 'PLC - Public Limited Company',
   UC:  'Unlimited Company',
 };
 
@@ -70,7 +71,8 @@ app.get('/api/search', async (req, res) => {
 
   // CKAN exact-match filters (safe to combine with q)
   const filters = {};
-  if (status === 'active') filters.company_status = 'Normal';
+  // CRO data has trailing spaces in status values (e.g. "Normal ")
+  if (status === 'active') filters.company_status = 'Normal ';
   if (status === 'struck') filters.company_status = 'Struck Off';
   if (companyType && COMPANY_TYPE_MAP[companyType]) filters.company_type = COMPANY_TYPE_MAP[companyType];
   if (Object.keys(filters).length > 0) params.filters = JSON.stringify(filters);

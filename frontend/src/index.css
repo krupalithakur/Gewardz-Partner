@@ -19,6 +19,8 @@
   --red: #ef4444;
   --red-dim: #fef2f2;
   --red-text: #991b1b;
+  --green: #059669;
+  --yellow: #f59e0b;
   --text: #111827;
   --text-muted: #6b7280;
   --text-dim: #9ca3af;
@@ -493,6 +495,51 @@ a { color: inherit; text-decoration: none; }
   font-size: 13px; line-height: 1.75;
   white-space: pre-wrap; word-break: break-word;
   min-height: 200px; flex: 1;
+  color: var(--text);
+}
+
+/* ─── Toggle tabs (outreach modal) ─────────────────── */
+.tab-group {
+  display: flex;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 3px;
+  gap: 3px;
+}
+
+.tab-btn {
+  flex: 1;
+  padding: 6px 10px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: transparent;
+}
+
+.tab-btn.active {
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.btn-danger {
+  background: var(--red-dim);
+  color: var(--red);
+  border: 1px solid rgba(239,68,68,0.3);
+}
+.btn-danger:hover:not(:disabled) { background: rgba(239,68,68,0.15); }
+
+.outreach-content .section-header {
+  font-weight: 700;
+  color: var(--accent);
+  margin-top: 12px;
+  margin-bottom: 4px;
+}
+
+.outreach-content .bold-text {
+  font-weight: 600;
   color: var(--text);
 }
 
